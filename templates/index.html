@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart PO & Invoice Auditor — ตรวจเช็คบิลคู่ค้าอัตโนมัติด้วย AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Prompt', 'Inter', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+    /* เมื่อแสดงผลจากประวัติย้อนหลัง: พื้นหลังเทา + ดรอปสีการ์ดให้หม่นลง 1 เฉด */
+    .history-mode-active {
+      background-color: #f1f5f9 !important; /* พื้นหลังเทา Slate-100 */
+      padding: 1.5rem !important;
+      border-radius: 1.5rem !important;
+      border: 2px dashed #cbd5e1 !important; /* ขอบประวัติ Slate-300 */
+      transition: all 0.3s ease;
+    }
+    .history-mode-active .bg-white {
+      background-color: #f8fafc !important; /* ดรอปสีขาวสว่างลง 1 เฉด เป็น Slate-50 */
+      border-color: #cbd5e1 !important; /* ขอบเข้มขึ้นเป็น Slate-300 */
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04) !important;
+    }
+    .history-mode-active #statusBanner {
+      filter: saturate(0.55) brightness(0.92); /* ดรอปสีแบนเนอร์ให้หม่นลง 1 เฉด */
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05) !important;
+    }
+    .history-mode-active #findingsList > div {
+      filter: saturate(0.60) brightness(0.94); /* ดรอปสีการ์ดรายการให้หม่นลง */
+    }
+    .history-mode-active table thead {
+      background-color: #e2e8f0 !important; /* หัวตารางหม่นลง */
+    }
+    .history-mode-active .bg-slate-50 {
+      background-color: #e2e8f0 !important; /* กล่องย่อยหม่นลง */
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- Navigation Bar -->
+  <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-blue-500/30">
+          ⚖️
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-bold text-lg tracking-tight">Smart PO & Invoice Auditor</h1>
+            <span class="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">Enterprise 8-Cases Edition</span>
+          </div>
+          <p class="text-xs text-slate-400">ระบบตรวจสอบคำสั่งซื้อชนบิลคู่ค้า และตรวจจับความผิดปกติด้วย AI</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3 text-xs">
+        <button onclick="openHistoryModal()" type="button" class="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600 px-3.5 py-1.5 rounded-xl font-medium transition cursor-pointer shadow-sm">
+          <span>📜 ประวัติการวิเคราะห์</span>
+          <span id="historyHeaderCount" class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">0</span>
+        </button>
+        <div class="flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full font-medium">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Port 8000 (Monolith Ready)</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-6">
+
+    <!-- Input Control Card -->
+    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+      <div class="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h2 class="text-base font-bold text-slate-900 flex items-center space-x-2">
+            <span>⚙️</span>
+            <span>ขั้นตอนที่ 1 & 2: เลือกใบสั่งซื้อและอัปโหลดเอกสารคู่ค้า</span>
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">เชื่อมต่อฐานข้อมูล SQLite (<code class="mono text-blue-600">enterprise.db</code>) ชนเอกสาร PDF</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Step 1: PO Selector -->
+        <div class="space-y-2">
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            1. เลือกเลขที่ใบสั่งซื้อ (PO from Database)
+          </label>
+          <div class="relative">
+            <select id="poSelect" onchange="onPoSelected()" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+              <option value="">-- กำลังโหลดรายการ PO... --</option>
+            </select>
+          </div>
+          <p class="text-[11px] text-slate-400">ดึงข้อมูลจริงจากตาราง <span class="mono">purchase_orders</span> (มีทั้งหมด 8 รายการ)</p>
+        </div>
+
+        <!-- Step 2: Invoice Upload -->
+        <div class="space-y-2">
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            2. แนบไฟล์ใบแจ้งหนี้ (Invoice PDF)
+          </label>
+          <input type="file" id="invoiceFile" onchange="clearPreset()" accept=".pdf" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl bg-slate-50 cursor-pointer">
+          <p id="invoiceStatusHint" class="text-[11px] text-slate-400">รองรับไฟล์ .pdf จากคู่ค้า</p>
+        </div>
+
+        <!-- Step 3: Contract Upload -->
+        <div class="space-y-2">
+          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+            3. แนบสัญญา/ใบตรวจรับ (Contract/GR PDF)
+          </label>
+          <input type="file" id="contractFile" onchange="clearPreset()" accept=".pdf" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-slate-200 rounded-xl bg-slate-50 cursor-pointer">
+          <p id="contractStatusHint" class="text-[11px] text-slate-400">เอกสารเงื่อนไขค่าปรับหรืองวดงาน</p>
+        </div>
+      </div>
+
+      <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div id="activePresetBadge" class="hidden text-xs bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl font-medium items-center space-x-1.5">
+          <span>⚡ ใช้ข้อมูลจำลอง:</span>
+          <span id="presetLabel" class="font-bold"></span>
+          <button onclick="clearPreset()" class="text-slate-400 hover:text-slate-600 ml-1">✕</button>
+        </div>
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto ml-auto justify-end">
+          <label class="inline-flex items-center space-x-2 text-xs text-slate-600 cursor-pointer bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-2.5 rounded-xl transition select-none" title="ติ๊กเพื่อข้าม Cache และส่ง AI ประมวลผลใหม่สดๆ ทุกครั้ง">
+            <input type="checkbox" id="forceReauditCheckbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+            <span class="font-medium">🔄 ตรวจสดใหม่ (ไม่ใช้ Cache)</span>
+          </label>
+          <button onclick="openHistoryModal()" id="historyBtn" type="button" class="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-700 font-semibold text-sm flex items-center justify-center space-x-2 transition shadow-sm cursor-pointer">
+            <span>📜 ประวัติการวิเคราะห์</span>
+            <span id="historyActionCount" class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">0</span>
+          </button>
+          <button onclick="clearAll()" id="clearBtn" type="button" class="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-sm flex items-center justify-center space-x-2 transition shadow-sm hover:border-slate-400 cursor-pointer">
+            <span>🔄 ล้างข้อมูล (Clear)</span>
+          </button>
+          <button onclick="runAudit()" id="runBtn" class="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-sm px-6 py-2.5 rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center space-x-2 transition disabled:opacity-50">
+            <span>⚡ ตรวจสอบเอกสารด้วย AI (Run AI Audit)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PO Details Card (Loaded from DB) -->
+    <div id="poDetailCard" class="hidden bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+          <span>🏢</span>
+          <span>ข้อมูลจัดซื้อในระบบทางการ (Official PO & Vendor Master Data)</span>
+        </h3>
+        <span id="poBadgeSite" class="text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-medium"></span>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+          <span class="text-slate-400 block mb-0.5">เลขที่ PO</span>
+          <span id="poNoView" class="font-bold text-slate-900 mono text-sm"></span>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 lg:col-span-2">
+          <span class="text-slate-400 block mb-0.5">ชื่อบริษัทคู่ค้า (Vendor Name)</span>
+          <span id="vendorNameView" class="font-bold text-slate-900 truncate block"></span>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+          <span class="text-slate-400 block mb-0.5">เลข Tax ID (13 หลัก)</span>
+          <span id="taxIdView" class="font-bold text-slate-900 mono"></span>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+          <span class="text-slate-400 block mb-0.5">วงเงินอนุมัติ (ก่อน VAT)</span>
+          <span id="amountView" class="font-bold text-blue-700 text-sm"></span>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+          <span class="text-slate-400 block mb-0.5">เครดิตเทอมมาตรฐาน</span>
+          <span id="creditDaysView" class="font-bold text-slate-900"></span>
+        </div>
+      </div>
+      <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
+        <div>
+          <span class="text-slate-400">บัญชีธนาคารทางการ: </span>
+          <span id="bankAccountView" class="font-bold text-slate-800 mono"></span>
+        </div>
+        <div>
+          <span class="text-slate-400">ขอบเขตงาน: </span>
+          <span id="scopeView" class="font-medium text-slate-700"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Results Section -->
+    <div id="resultsSection" class="hidden space-y-6">
+
+      <!-- Historical Archive Notice Banner -->
+      <div id="historyNoticeBanner" class="hidden p-3.5 bg-slate-200/90 border border-slate-300/90 text-slate-700 rounded-2xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs transition">
+        <div class="flex items-center space-x-2.5">
+          <span class="text-base">📜</span>
+          <div>
+            <span class="font-bold text-slate-800">กำลังแสดงผลวิเคราะห์จากประวัติ (Historical Archive View)</span>
+            <span id="historyNoticeDate" class="text-slate-500 ml-1"></span>
+          </div>
+        </div>
+        <div class="flex items-center space-x-3">
+          <span class="text-[11px] bg-slate-300 text-slate-800 font-semibold px-2.5 py-0.5 rounded-full">โหมดดูประวัติย้อนหลัง</span>
+          <button type="button" onclick="document.getElementById('forceReauditCheckbox').checked = true; runAudit();" class="text-blue-700 hover:text-blue-900 font-bold hover:underline text-xs flex items-center space-x-1 cursor-pointer">
+            <span>🔄 ตรวจสดใหม่ด้วย AI</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Status Banner -->
+      <div id="statusBanner" class="rounded-2xl p-6 shadow-lg border text-white transition">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+              <span id="statusIcon" class="text-2xl"></span>
+              <span id="statusTitle" class="text-xl font-bold tracking-tight"></span>
+              <span id="engineBadge" class="text-[11px] bg-white/20 border border-white/30 px-2.5 py-0.5 rounded-full font-medium"></span>
+            </div>
+            <p id="statusAction" class="text-sm opacity-90 leading-relaxed"></p>
+          </div>
+          <button onclick="copySummary()" class="bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-4 py-2.5 rounded-xl border border-white/30 flex items-center space-x-2 transition self-start md:self-center shadow">
+            <span>📋</span>
+            <span>คัดลอกผลสรุปส่งอีเมล</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Discrepancy Findings -->
+      <div id="findingsCard" class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <h3 class="text-sm font-bold text-slate-900 flex items-center space-x-2 border-b border-slate-100 pb-3">
+          <span>🔍</span>
+          <span>รายการข้อตรวจพบความผิดปกติ (Audit Findings & Anomaly Breakdown)</span>
+        </h3>
+        <div id="findingsList" class="space-y-3"></div>
+      </div>
+
+      <!-- Side-by-Side Comparison Matrix -->
+      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
+            <span>⚖️</span>
+            <span>ตารางเปรียบเทียบข้อมูลระบบ VS ข้อมูลบิลคู่ค้า (Side-by-Side Comparison Matrix)</span>
+          </h3>
+          <div class="flex items-center space-x-2">
+            <button type="button" onclick="openDocumentModal('invoice', '', 'ภาพเอกสารใบแจ้งหนี้')" class="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-blue-700 font-semibold text-xs flex items-center space-x-1.5 transition cursor-pointer shadow-xs">
+              <span>📄 ดูใบแจ้งหนี้ (Invoice PDF)</span>
+            </button>
+            <button type="button" onclick="openDocumentModal('contract', '', 'ภาพเอกสารสัญญา/ใบตรวจรับ')" class="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs flex items-center space-x-1.5 transition cursor-pointer shadow-xs">
+              <span>📑 ดูสัญญา/GR (Contract PDF)</span>
+            </button>
+          </div>
+        </div>
+        <p class="text-[11px] text-slate-600 bg-blue-50/60 p-2.5 rounded-xl border border-blue-100 flex items-center space-x-2">
+          <span class="text-sm">💡</span>
+          <span><strong>ทิป:</strong> คลิกที่ตัวเลขหรือข้อความในคอลัมน์ <em>"ข้อมูลที่สกัดได้จากบิล PDF"</em> (เช่น เลข Tax ID <span class="mono font-bold text-blue-700">0105547089112</span>, เลขบัญชี, ยอดเงิน) เพื่อเปิดดูภาพเอกสารจริงและไฮไลท์จุดที่ AI อ่านค่ามาได้ทันที</span>
+        </p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-100 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4">หัวข้อตรวจสอบ</th>
+                <th class="py-3 px-4">ข้อมูลจัดซื้อในระบบ (PO Database)</th>
+                <th class="py-3 px-4">ข้อมูลที่สกัดได้จากบิล PDF</th>
+                <th class="py-3 px-4 text-center">สถานะความสอดคล้อง</th>
+              </tr>
+            </thead>
+            <tbody id="comparisonTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Financial Settlement Table -->
+      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <h3 class="text-sm font-bold text-slate-900 flex items-center space-x-2 border-b border-slate-100 pb-3">
+          <span>💰</span>
+          <span>สรุปตัวเลขการจ่ายเงิน (Financial Settlement & Reconciliation)</span>
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Breakdown List -->
+          <div class="space-y-2.5 text-xs">
+            <div class="flex justify-between py-1.5 border-b border-slate-100">
+              <span class="text-slate-500">วงเงินอนุมัติตาม PO (Base Budget):</span>
+              <span id="finPoBase" class="font-bold text-slate-800 mono"></span>
+            </div>
+            <div class="flex justify-between py-1.5 border-b border-slate-100">
+              <span class="text-slate-500">ยอดที่คู่ค้าเรียกเก็บบนบิล (Billed Subtotal):</span>
+              <span id="finBilledSubtotal" class="font-medium text-slate-700 mono"></span>
+            </div>
+            <div class="flex justify-between py-1.5 border-b border-slate-100 text-amber-700">
+              <span>(-) หักยอดงอก / ของไม่ครบ / หัก Retention / ค่าปรับ:</span>
+              <span id="finExtraDeduct" class="font-bold mono"></span>
+            </div>
+          </div>
+
+          <!-- Total Due Box -->
+          <div class="bg-slate-50 rounded-xl p-5 border border-slate-200 flex flex-col justify-between space-y-4">
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between text-slate-600">
+                <span>ยอดเงินอนุมัติจ่ายจริง (ก่อน VAT):</span>
+                <span id="finNetSubtotal" class="font-bold mono text-sm text-slate-900"></span>
+              </div>
+              <div class="flex justify-between text-slate-600">
+                <span>ภาษีมูลค่าเพิ่ม (VAT 7%):</span>
+                <span id="finVat" class="font-medium mono text-slate-700"></span>
+              </div>
+            </div>
+            <div class="pt-3 border-t border-slate-200 flex justify-between items-center">
+              <div>
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">ยอดจ่ายสุทธิที่แนะนำ (Total Due)</span>
+                <span class="text-[10px] text-slate-400">รวม VAT 7% สุทธิแล้ว</span>
+              </div>
+              <span id="finTotalDue" class="text-xl font-black text-blue-700 mono"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  <!-- Audit History Modal -->
+  <div id="historyModal" onclick="if(event.target === this) closeHistoryModal()" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 transition-all duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-lg text-blue-400">
+            📜
+          </div>
+          <div>
+            <h3 class="text-sm font-bold flex items-center space-x-2">
+              <span>ประวัติการตรวจสอบย้อนหลัง (Audit History Archive)</span>
+              <span id="historyModalCountBadge" class="text-[11px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">0 รายการ</span>
+            </h3>
+            <p class="text-[11px] text-slate-400">คลิกที่รายการเพื่อเปิดดูผลการวิเคราะห์และข้อตรวจพบฉบับเต็มได้ทันที</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button type="button" onclick="clearAllHistory()" class="text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/20 border border-transparent hover:border-rose-500/30 px-3 py-1.5 rounded-lg transition cursor-pointer" title="ล้างประวัติการตรวจทั้งหมด">
+            🗑️ ล้างทั้งหมด
+          </button>
+          <button type="button" onclick="closeHistoryModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition cursor-pointer" title="ปิด (ESC)">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Toolbar: Search & Filter Pills -->
+      <div class="px-6 py-3 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div class="relative w-full sm:w-72">
+          <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">🔍</span>
+          <input type="text" id="historySearchInput" oninput="filterHistoryList()" placeholder="ค้นหาเลข PO, ชื่อคู่ค้า, โครงการ..." class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+        </div>
+        <div class="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0" id="historyStatusFilters">
+          <button type="button" onclick="setHistoryFilter('ALL')" id="filterBtnALL" class="history-filter-btn px-2.5 py-1 rounded-lg font-semibold bg-slate-800 text-white transition cursor-pointer">ทั้งหมด</button>
+          <button type="button" onclick="setHistoryFilter('APPROVED')" id="filterBtnAPPROVED" class="history-filter-btn px-2.5 py-1 rounded-lg font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer">🟢 ผ่าน</button>
+          <button type="button" onclick="setHistoryFilter('WARNING')" id="filterBtnWARNING" class="history-filter-btn px-2.5 py-1 rounded-lg font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer">🟡 เตือน</button>
+          <button type="button" onclick="setHistoryFilter('HOLD_PAYMENT')" id="filterBtnHOLD_PAYMENT" class="history-filter-btn px-2.5 py-1 rounded-lg font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer">⏸️ ระงับชั่วคราว</button>
+          <button type="button" onclick="setHistoryFilter('FRAUD_ALERT')" id="filterBtnFRAUD_ALERT" class="history-filter-btn px-2.5 py-1 rounded-lg font-semibold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer">🔴 ทุจริต</button>
+        </div>
+      </div>
+
+      <!-- History Items Container -->
+      <div id="historyListContainer" class="p-6 overflow-y-auto max-h-[60vh] space-y-3 flex-1 bg-slate-50/60">
+        <!-- Dynamic history cards inserted here -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+        <span>💡 ผลการตรวจที่ดึงจากประวัติจะไม่เสียโควตาและไม่ต้องรอ AI ประมวลผลใหม่</span>
+        <button type="button" onclick="closeHistoryModal()" class="px-4 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium transition cursor-pointer">
+          ปิดหน้าต่าง
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Document Viewer & Highlighting Modal -->
+  <div id="docModal" onclick="if(event.target === this) closeDocumentModal()" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 transition-all duration-200">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-lg text-blue-400">
+            📄
+          </div>
+          <div>
+            <h3 class="text-sm font-bold flex items-center space-x-2">
+              <span>ภาพเอกสารต้นฉบับและการตรวจสอบตำแหน่ง (Document Visual Grounding)</span>
+            </h3>
+            <p class="text-[11px] text-slate-400">ตรวจสอบจุดที่ AI สกัดข้อความมาเปรียบเทียบ พร้อมไฮไลท์กรอบสีเหลือง-แดง</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeDocumentModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition cursor-pointer" title="ปิด (ESC)">
+          ✕
+        </button>
+      </div>
+
+      <!-- Control Toolbar -->
+      <div class="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+        
+        <!-- Document Tabs -->
+        <div class="flex items-center space-x-1.5 bg-slate-200/80 p-1 rounded-xl">
+          <button type="button" id="tabInvoice" onclick="switchDocType('invoice')" class="px-3 py-1.5 rounded-lg font-bold transition flex items-center space-x-1 bg-white text-blue-700 shadow-sm cursor-pointer">
+            <span>📄 ใบแจ้งหนี้ (Invoice PDF)</span>
+          </button>
+          <button type="button" id="tabContract" onclick="switchDocType('contract')" class="px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:text-slate-900 transition flex items-center space-x-1 cursor-pointer">
+            <span>📑 สัญญา/ใบตรวจรับ (Contract PDF)</span>
+          </button>
+        </div>
+
+        <!-- Search & Highlight in Doc -->
+        <div class="flex items-center space-x-2 flex-1 max-w-md">
+          <div class="relative w-full">
+            <input type="text" id="modalSearchInput" onkeydown="if(event.key==='Enter') applyModalSearch()" placeholder="พิมพ์คำที่ต้องการค้นหาและไฮไลท์ในเอกสาร..." class="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <button type="button" onclick="applyModalSearch()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition shadow-sm cursor-pointer whitespace-nowrap">
+            🎯 ไฮไลท์
+          </button>
+        </div>
+
+        <!-- Zoom Controls -->
+        <div class="flex items-center space-x-2 text-slate-600">
+          <button type="button" onclick="changeZoom(-0.15)" class="w-7 h-7 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 flex items-center justify-center font-bold transition cursor-pointer" title="ย่อ">-</button>
+          <span id="zoomLevelText" class="font-mono text-[11px] w-12 text-center">100%</span>
+          <button type="button" onclick="changeZoom(0.15)" class="w-7 h-7 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 flex items-center justify-center font-bold transition cursor-pointer" title="ขยาย">+</button>
+          <button type="button" onclick="resetZoom()" class="px-2 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-[11px] transition cursor-pointer" title="ขนาดปกติ">100%</button>
+        </div>
+
+      </div>
+
+      <!-- Match Info Status Banner -->
+      <div id="modalStatusBanner" class="px-6 py-2 bg-amber-50/90 border-b border-amber-200/60 flex items-center justify-between text-xs text-amber-900">
+        <div class="flex items-center space-x-2">
+          <span id="modalStatusIcon">🎯</span>
+          <span id="modalStatusText" class="font-medium">กำลังโหลดเอกสาร...</span>
+        </div>
+        <div class="flex items-center space-x-2 text-[11px] text-slate-500">
+          <span id="modalDocFilename" class="mono font-semibold text-slate-700"></span>
+          <span id="modalPageIndicator" class="bg-white px-2 py-0.5 rounded border border-slate-200"></span>
+        </div>
+      </div>
+
+      <!-- Modal Body (Image Container) -->
+      <div class="flex-1 overflow-auto p-6 bg-slate-100/80 flex items-start justify-center min-h-[460px] relative">
+        <!-- Loading Spinner -->
+        <div id="modalLoading" class="hidden absolute inset-0 bg-white/70 backdrop-blur-xs flex flex-col items-center justify-center z-10 space-y-2">
+          <div class="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-xs font-semibold text-slate-700">กำลังเรนเดอร์เอกสารและไฮไลท์ตำแหน่ง...</span>
+        </div>
+
+        <!-- Document Image Wrapper -->
+        <div id="modalImgWrapper" class="transition-transform duration-150 origin-top shadow-xl rounded-lg bg-white overflow-hidden border border-slate-200">
+          <img id="modalDocImg" src="" alt="Document Preview" class="max-w-full block select-none">
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+        <div class="text-slate-500 flex items-center space-x-1.5">
+          <span>💡 สามารถเลื่อน Scroll หรือใช้ปุ่ม +/- เพื่อซูมขยายตรวจสอบข้อความต้นฉบับได้ชัดเจน</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button type="button" onclick="closeDocumentModal()" class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold transition cursor-pointer">
+            ปิดหน้าต่าง (Close)
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-2 transform translate-y-20 opacity-0 transition duration-300 pointer-events-none z-50">
+    <span class="text-emerald-400">✓</span>
+    <span id="toastMsg">คัดลอกข้อมูลเรียบร้อยแล้ว</span>
+  </div>
+
+  <!-- JavaScript -->
+  <script>
+    let currentSelectedPreset = null;
+    let currentEmailSummaryText = "";
+    let poCache = {};
+    let currentHistoryList = [];
+    let activeHistoryFilter = 'ALL';
+
+    const presetMap = {
+      'case1': { po: 'PO-2026-089', label: 'Case 1: ยอดงอก + ค่าปรับส่งช้า 10 วัน' },
+      'case2': { po: 'PO-2026-090', label: 'Case 2: เอกสารตรงตามสัญญาครบถ้วน (Clean Approved)' },
+      'case3': { po: 'PO-2026-091', label: 'Case 3: เลขประจำตัวผู้เสียภาษี & บัญชีปลอม (Fraud Alert)' },
+      'case4': { po: 'PO-2026-092', label: 'Case 4: ขอเบิกเกินงวดงาน 50% vs Cap 30%' },
+      'case5': { po: 'PO-2026-093', label: 'Case 5: ส่งของไม่ครบ 7/10 ชุด แต่บิลเก็บเต็ม 100%' },
+      'case6': { po: 'PO-2026-094', label: 'Case 6: ลืมหักเงินประกันผลงาน (Retention 5%)' },
+      'case7': { po: 'PO-2026-095', label: 'Case 7: งานส่งมอบหลัง PO หมดอายุ (Hold รอ Amendment)' },
+      'case8': { po: 'PO-2026-096', label: 'Case 8: บิลคิดเลขผิด Subtotal ไม่ตรงกับ Line Items' }
+    };
+
+    async function init() {
+      try {
+        const res = await fetch('./api/pos');
+        const data = await res.json();
+        const select = document.getElementById('poSelect');
+        select.innerHTML = '<option value="">-- กรุณาเลือกเลขที่ PO --</option>';
+        data.pos.forEach(po => {
+          poCache[po.po_number] = po;
+          const opt = document.createElement('option');
+          opt.value = po.po_number;
+          opt.textContent = `${po.po_number} | ${po.vendor_name} (${Number(po.approved_amount).toLocaleString()} บ.)`;
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        console.error('Error fetching POs:', err);
+      }
+      loadHistory();
+    }
+
+    // ==========================================
+    // ประวัติการตรวจสอบย้อนหลัง (Audit History)
+    // ==========================================
+    async function loadHistory() {
+      try {
+        const res = await fetch('./api/history');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.history)) {
+          currentHistoryList = data.history;
+          const count = currentHistoryList.length;
+
+          const headerBadge = document.getElementById('historyHeaderCount');
+          if (headerBadge) headerBadge.textContent = count;
+
+          const actionBadge = document.getElementById('historyActionCount');
+          if (actionBadge) actionBadge.textContent = count;
+
+          const modalBadge = document.getElementById('historyModalCountBadge');
+          if (modalBadge) modalBadge.textContent = `${count} รายการ`;
+
+          renderHistoryList();
+        }
+      } catch (err) {
+        console.error('Error loading history:', err);
+      }
+    }
+
+    function openHistoryModal() {
+      const modal = document.getElementById('historyModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        loadHistory();
+      }
+    }
+
+    function closeHistoryModal() {
+      const modal = document.getElementById('historyModal');
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+    }
+
+    function setHistoryFilter(filter) {
+      activeHistoryFilter = filter;
+      const buttons = document.querySelectorAll('.history-filter-btn');
+      buttons.forEach(btn => {
+        btn.classList.remove('bg-slate-800', 'text-white');
+        btn.classList.add('bg-white', 'border', 'border-slate-200', 'text-slate-700');
+      });
+      const activeBtn = document.getElementById(`filterBtn${filter}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-white', 'border', 'border-slate-200', 'text-slate-700');
+        activeBtn.classList.add('bg-slate-800', 'text-white');
+      }
+      renderHistoryList();
+    }
+
+    function filterHistoryList() {
+      renderHistoryList();
+    }
+
+    function renderHistoryList() {
+      const container = document.getElementById('historyListContainer');
+      if (!container) return;
+
+      const searchKeyword = (document.getElementById('historySearchInput')?.value || '').trim().toLowerCase();
+
+      const filtered = currentHistoryList.filter(item => {
+        if (activeHistoryFilter !== 'ALL' && item.status !== activeHistoryFilter) {
+          return false;
+        }
+        if (searchKeyword) {
+          const textToSearch = `${item.po_number} ${item.vendor_name} ${item.project_site} ${item.status_label || ''} ${item.action_recommendation || ''}`.toLowerCase();
+          if (!textToSearch.includes(searchKeyword)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 px-4 bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400">
+            <span class="text-3xl block mb-2">📭</span>
+            <p class="text-sm font-semibold text-slate-700">ไม่พบข้อมูลประวัติการวิเคราะห์</p>
+            <p class="text-xs text-slate-400 mt-1">${searchKeyword || activeHistoryFilter !== 'ALL' ? 'ลองปรับคำค้นหาหรือเปลี่ยนตัวกรองใหม่อีกครั้ง' : 'เมื่อทำการตรวจสอบเอกสาร PO ระบบจะบันทึกผลการตรวจลงประวัติให้อัตโนมัติ'}</p>
+          </div>
+        `;
+        return;
+      }
+
+      const getStatusBadge = (status) => {
+        if (status === 'APPROVED') {
+          return `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 ผ่าน (Approved)</span>`;
+        } else if (status === 'WARNING') {
+          return `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">🟡 เตือน (Warning)</span>`;
+        } else if (status === 'HOLD_PAYMENT') {
+          return `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-orange-50 text-orange-700 border border-orange-200">⏸️ ระงับชั่วคราว (Hold)</span>`;
+        } else {
+          return `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">🔴 ทุจริต (Fraud Alert)</span>`;
+        }
+      };
+
+      container.innerHTML = filtered.map(item => {
+        const timeStr = item.created_at || item.last_accessed_at || '-';
+        const payableFormatted = item.final_payable_amount != null 
+          ? Number(item.final_payable_amount).toLocaleString() + ' ฿' 
+          : 'ไม่ระบุ';
+
+        return `
+          <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="space-y-1.5 flex-1 min-w-0">
+              <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                <span class="font-black text-sm mono text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-100">${item.po_number}</span>
+                ${getStatusBadge(item.status)}
+                <span class="text-[11px] text-slate-400">📅 ${timeStr}</span>
+              </div>
+              <div class="text-xs text-slate-800 font-semibold truncate">
+                🏢 ${item.vendor_name} <span class="font-normal text-slate-500">• ${item.project_site}</span>
+              </div>
+              <div class="flex items-center space-x-3 text-[11px] text-slate-600 flex-wrap gap-y-1">
+                <span>💰 ยอดจ่ายสุทธิ: <strong class="text-slate-900">${payableFormatted}</strong></span>
+                <span class="text-slate-300">•</span>
+                <span class="text-amber-700 font-medium">⚠️ ข้อตรวจพบ: ${item.findings_count} รายการ</span>
+                <span class="text-slate-300">•</span>
+                <span class="text-slate-400 truncate max-w-[200px]" title="${item.audit_engine || ''}">🤖 ${item.audit_engine || 'AI Engine'}</span>
+              </div>
+            </div>
+            <div class="flex items-center space-x-2 self-end sm:self-center shrink-0">
+              <button onclick="viewHistoricalAudit('${item.cache_key}')" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs rounded-xl shadow-md shadow-blue-500/20 flex items-center space-x-1.5 transition cursor-pointer">
+                <span>👁️</span>
+                <span>เปิดดูผลวิเคราะห์</span>
+              </button>
+              <button onclick="deleteHistoryItem('${item.cache_key}', event)" class="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer" title="ลบประวัติตัวนี้">
+                🗑️
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function viewHistoricalAudit(cacheKey) {
+      try {
+        const res = await fetch(`./api/history/${cacheKey}`);
+        const data = await res.json();
+        if (!res.ok) {
+          alert('ไม่สามารถโหลดประวัติได้: ' + (data.detail || ''));
+          return;
+        }
+
+        // 1. ตั้งค่าเลขที่ PO ใน dropdown
+        const poSelect = document.getElementById('poSelect');
+        if (poSelect) {
+          poSelect.value = data.po_number;
+        }
+
+        // 2. เรนเดอร์ข้อมูล PO Master
+        if (data.po_data) {
+          const po = data.po_data;
+          document.getElementById('poNoView').textContent = po.po_number;
+          document.getElementById('vendorNameView').textContent = po.vendor_name;
+          document.getElementById('taxIdView').textContent = po.tax_id;
+          document.getElementById('amountView').textContent = Number(po.approved_amount).toLocaleString() + ' ฿';
+          document.getElementById('creditDaysView').textContent = po.standard_credit_days + ' วัน';
+          document.getElementById('bankAccountView').textContent = `${po.bank_name} (${po.bank_account})`;
+          document.getElementById('scopeView').textContent = po.scope_of_work;
+          document.getElementById('poBadgeSite').textContent = po.project_site;
+          document.getElementById('poDetailCard').classList.remove('hidden');
+        }
+
+        // 3. เรนเดอร์ผลการตรวจสอบ (Audit Results)
+        renderAuditResults(data.audit, data.audit_engine, true, data.created_at, true);
+
+        // 4. ปิดหน้าต่างประวัติ
+        closeHistoryModal();
+
+        // 5. เลื่อนหน้าจอไปที่ส่วนผลการตรวจอย่างนุ่มนวล
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+          resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 6. แจ้งเตือน Toast
+        showToast(`📜 เปิดดูผลวิเคราะห์ย้อนหลังของ ${data.po_number} เรียบร้อยแล้ว`);
+      } catch (err) {
+        console.error('Error viewing history:', err);
+        alert('เกิดข้อผิดพลาดในการโหลดผลการวิเคราะห์: ' + err.message);
+      }
+    }
+
+    async function deleteHistoryItem(cacheKey, event) {
+      if (event) event.stopPropagation();
+      if (!confirm('คุณต้องการลบประวัติการตรวจรายการนี้ใช่หรือไม่?')) return;
+
+      try {
+        const res = await fetch(`./api/history/${cacheKey}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('ลบรายการประวัติเรียบร้อยแล้ว');
+          loadHistory();
+        } else {
+          alert('ลบรายการไม่สำเร็จ: ' + (data.message || ''));
+        }
+      } catch (err) {
+        console.error('Error deleting history item:', err);
+        alert('เกิดข้อผิดพลาดในการลบรายการ: ' + err.message);
+      }
+    }
+
+    async function clearAllHistory() {
+      if (!confirm('⚠️ คำเตือน: คุณต้องการล้างประวัติการตรวจสอบย้อนหลังทั้งหมดใช่หรือไม่?\n(ผลวิเคราะห์เดิมและ Cache จะถูกล้างทั้งหมด)')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('./api/history', { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('ล้างประวัติการตรวจสอบทั้งหมดเรียบร้อยแล้ว');
+          loadHistory();
+        } else {
+          alert('ไม่สามารถล้างประวัติได้: ' + (data.message || ''));
+        }
+      } catch (err) {
+        console.error('Error clearing history:', err);
+        alert('เกิดข้อผิดพลาดในการล้างประวัติ: ' + err.message);
+      }
+    }
+
+    async function onPoSelected() {
+      const poNo = document.getElementById('poSelect').value;
+      const card = document.getElementById('poDetailCard');
+      if (!poNo) {
+        card.classList.add('hidden');
+        return;
+      }
+
+      try {
+        const res = await fetch(`./api/pos/${poNo}`);
+        const data = await res.json();
+        const po = data.po;
+
+        document.getElementById('poNoView').textContent = po.po_number;
+        document.getElementById('vendorNameView').textContent = po.vendor_name;
+        document.getElementById('taxIdView').textContent = po.tax_id;
+        document.getElementById('amountView').textContent = Number(po.approved_amount).toLocaleString() + ' ฿';
+        document.getElementById('creditDaysView').textContent = po.standard_credit_days + ' วัน';
+        document.getElementById('bankAccountView').textContent = `${po.bank_name} (${po.bank_account})`;
+        document.getElementById('scopeView').textContent = po.scope_of_work;
+        document.getElementById('poBadgeSite').textContent = po.project_site;
+
+        card.classList.remove('hidden');
+      } catch (err) {
+        console.error('Error fetching PO detail:', err);
+      }
+    }
+
+    function loadPreset(caseKey) {
+      currentSelectedPreset = caseKey;
+      const p = presetMap[caseKey];
+      if (p) {
+        document.getElementById('poSelect').value = p.po;
+        onPoSelected();
+        document.getElementById('presetLabel').textContent = p.label;
+        document.getElementById('activePresetBadge').classList.remove('hidden');
+        document.getElementById('activePresetBadge').classList.add('inline-flex');
+        runAudit();
+      }
+    }
+
+    function clearPreset() {
+      currentSelectedPreset = null;
+      document.getElementById('activePresetBadge').classList.add('hidden');
+      document.getElementById('activePresetBadge').classList.remove('inline-flex');
+    }
+
+    function clearAll() {
+      // 1. ล้างค่ารายการ PO ที่เลือก
+      const poSelect = document.getElementById('poSelect');
+      if (poSelect) poSelect.value = '';
+
+      // 2. ล้างไฟล์แนบทั้ง 2 ช่อง
+      const invInput = document.getElementById('invoiceFile');
+      if (invInput) invInput.value = '';
+      const conInput = document.getElementById('contractFile');
+      if (conInput) conInput.value = '';
+
+      // 3. ยกเลิกพรีเซ็ตจำลอง
+      clearPreset();
+
+      // 4. ซ่อนการ์ดข้อมูล PO จากฐานข้อมูล
+      const poCard = document.getElementById('poDetailCard');
+      if (poCard) poCard.classList.add('hidden');
+
+      // 5. ซ่อนส่วนผลการตรวจสอบ (Audit Results)
+      const resultsSection = document.getElementById('resultsSection');
+      if (resultsSection) {
+        resultsSection.classList.add('hidden');
+        resultsSection.classList.remove('history-mode-active');
+      }
+      const historyNotice = document.getElementById('historyNoticeBanner');
+      if (historyNotice) historyNotice.classList.add('hidden');
+
+      // 6. ล้างข้อความสรุปและเซสชันเอกสาร
+      currentEmailSummaryText = '';
+      currentAuditSessionId = null;
+      closeDocumentModal();
+
+      // 7. รีเซ็ตปุ่ม force reaudit
+      const forceReaudit = document.getElementById('forceReauditCheckbox');
+      if (forceReaudit) forceReaudit.checked = false;
+
+      // 8. แจ้งเตือน Toast
+      showToast('ล้างข้อมูลและผลการตรวจสอบเรียบร้อยแล้ว');
+    }
+
+    async function runAudit() {
+      const poNo = document.getElementById('poSelect').value;
+      if (!poNo) {
+        alert('กรุณาเลือกเลขที่ PO ก่อนเริ่มตรวจสอบ');
+        return;
+      }
+
+      const runBtn = document.getElementById('runBtn');
+      runBtn.disabled = true;
+
+      let elapsedSeconds = 0;
+      const updateButtonText = () => {
+        if (elapsedSeconds < 3) {
+          runBtn.innerHTML = `<span>⏳ กำลังอ่านและดึงข้อมูลจากเอกสาร PDF (${elapsedSeconds}s)...</span>`;
+        } else if (elapsedSeconds < 65) {
+          runBtn.innerHTML = `<span>🤖 AI กำลังคิดวิเคราะห์ (Reasoning & Cross-Check ${elapsedSeconds}s)...</span>`;
+        } else {
+          runBtn.innerHTML = `<span>📊 กำลังประมวลผลตัวเลขและจัดทำรายงาน (${elapsedSeconds}s)...</span>`;
+        }
+      };
+      updateButtonText();
+      const stageInterval = setInterval(() => {
+        elapsedSeconds++;
+        updateButtonText();
+      }, 1000);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 95000);
+
+      try {
+        const formData = new FormData();
+        formData.append('po_number', poNo);
+
+        const forceReaudit = document.getElementById('forceReauditCheckbox')?.checked || false;
+        formData.append('force_reaudit', forceReaudit ? 'true' : 'false');
+
+        if (currentSelectedPreset) {
+          formData.append('preset_key', currentSelectedPreset);
+        } else {
+          const invFile = document.getElementById('invoiceFile').files[0];
+          const conFile = document.getElementById('contractFile').files[0];
+          if (invFile) formData.append('invoice_file', invFile);
+          if (conFile) formData.append('contract_file', conFile);
+        }
+
+        const res = await fetch('./api/audit', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        const data = await res.json();
+        if (!res.ok) {
+          alert('เกิดข้อผิดพลาด: ' + (data.detail || 'ไม่สามารถตรวจสอบเอกสารได้'));
+          return;
+        }
+
+        currentAuditSessionId = data.session_id || null;
+        if (data.preset_key) currentSelectedPreset = data.preset_key;
+
+        renderAuditResults(data.audit, data.audit_engine, data.cached, data.cached_at);
+        loadHistory();
+        if (data.cached) {
+          showToast('⚡ ดึงผลลัพธ์จาก Smart Cache ทันที (0.01s • ประหยัดโควตา Token 100%)');
+        }
+      } catch (err) {
+        clearTimeout(timeoutId);
+        console.error('Audit error:', err);
+        if (err.name === 'AbortError') {
+          alert('การตรวจสอบใช้เวลานานเกินกำหนด (Timeout) กรุณาลองใหม่อีกครั้ง');
+        } else {
+          alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์: ' + err.message);
+        }
+      } finally {
+        clearInterval(stageInterval);
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<span>⚡ ตรวจสอบเอกสารด้วย AI (Run AI Audit)</span>';
+      }
+    }
+
+    function renderAuditResults(audit, engineName, isCached, cachedAt, isFromHistory = false) {
+      if (!audit) return;
+      const resultsSection = document.getElementById('resultsSection');
+      resultsSection.classList.remove('hidden');
+
+      const noticeBanner = document.getElementById('historyNoticeBanner');
+      const noticeDate = document.getElementById('historyNoticeDate');
+
+      if (isFromHistory) {
+        resultsSection.classList.add('history-mode-active');
+        if (noticeBanner) noticeBanner.classList.remove('hidden');
+        if (noticeDate) noticeDate.textContent = cachedAt ? `• บันทึกเมื่อ ${cachedAt}` : '';
+      } else {
+        resultsSection.classList.remove('history-mode-active');
+        if (noticeBanner) noticeBanner.classList.add('hidden');
+      }
+
+      const banner = document.getElementById('statusBanner');
+      const icon = document.getElementById('statusIcon');
+      const title = document.getElementById('statusTitle');
+      const action = document.getElementById('statusAction');
+      const engineBadge = document.getElementById('engineBadge');
+
+      if (engineBadge) {
+        if (isFromHistory) {
+          const cleanEngine = (engineName || '').replace(' [⚡ Cached Result]', '');
+          engineBadge.innerHTML = `📜 <span>ประวัติย้อนหลัง · ${cleanEngine}</span>`;
+          engineBadge.className = 'text-[11px] bg-slate-700/70 text-slate-200 border border-slate-500/60 px-2.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1 shadow-sm';
+          engineBadge.title = `ผลวิเคราะห์นี้ดึงมาจากประวัติการตรวจสอบย้อนหลัง (บันทึกเมื่อ ${cachedAt || 'ก่อนหน้า'})`;
+        } else if (isCached || (engineName && engineName.includes('Cached Result'))) {
+          const cleanEngine = (engineName || '').replace(' [⚡ Cached Result]', '');
+          engineBadge.innerHTML = `⚡ <span>Cached (0.01s) · ${cleanEngine}</span>`;
+          engineBadge.className = 'text-[11px] bg-emerald-500/30 text-emerald-100 border border-emerald-300/40 px-2.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1 shadow-sm';
+          engineBadge.title = `ผลลัพธ์ดึงมาจาก Smart Cache ในเครื่อง ไม่ส่งซ้ำไป API ประหยัดโควตา 100% (บันทึกเมื่อ ${cachedAt || 'ก่อนหน้า'})`;
+        } else {
+          engineBadge.textContent = engineName ? `⚙️ ${engineName}` : '';
+          engineBadge.className = 'text-[11px] bg-white/20 border border-white/30 px-2.5 py-0.5 rounded-full font-medium';
+          engineBadge.title = '';
+        }
+      }
+
+      const status = audit.status || 'WARNING';
+      if (status === 'APPROVED') {
+        banner.className = 'rounded-2xl p-6 shadow-lg border text-white transition bg-gradient-to-r from-emerald-600 to-teal-700 border-emerald-500';
+        icon.textContent = '🟢';
+        title.textContent = audit.status_label || '🟢 APPROVED (อนุมัติจ่ายเงินได้)';
+      } else if (status === 'WARNING') {
+        banner.className = 'rounded-2xl p-6 shadow-lg border text-white transition bg-gradient-to-r from-amber-600 to-yellow-600 border-amber-500';
+        icon.textContent = '🟡';
+        title.textContent = audit.status_label || '🟡 WARNING (พบข้อผิดพลาด / ต้องปรับลดยอด)';
+      } else if (status === 'HOLD_PAYMENT') {
+        banner.className = 'rounded-2xl p-6 shadow-lg border text-white transition bg-gradient-to-r from-orange-600 to-amber-700 border-orange-500';
+        icon.textContent = '⏸️';
+        title.textContent = audit.status_label || '🟡 HOLD PAYMENT (ระงับจ่ายชั่วคราว)';
+      } else {
+        banner.className = 'rounded-2xl p-6 shadow-lg border text-white transition bg-gradient-to-r from-rose-700 to-red-800 border-rose-600';
+        icon.textContent = '🔴';
+        title.textContent = audit.status_label || '🔴 FRAUD ALERT (ระงับการจ่ายเงินทันที)';
+      }
+      action.textContent = audit.action_recommendation || 'ตรวจสอบเอกสารเรียบร้อยแล้ว';
+
+      const findingsList = document.getElementById('findingsList');
+      findingsList.innerHTML = '';
+      const discrepancies = audit.discrepancies || [];
+      if (discrepancies.length === 0) {
+        findingsList.innerHTML = `
+          <div class="p-3.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs flex items-center space-x-2">
+            <span>✓</span>
+            <span class="font-medium">ไม่พบข้อผิดปกติ เอกสารและตัวเลขสอดคล้องกับสัญญาครบถ้วน 100%</span>
+          </div>
+        `;
+      } else {
+        discrepancies.forEach(d => {
+          let badgeColor = 'bg-amber-50 text-amber-900 border-amber-200';
+          if (d.severity === 'critical') badgeColor = 'bg-rose-50 text-rose-900 border-rose-200';
+          if (d.severity === 'info') badgeColor = 'bg-blue-50 text-blue-900 border-blue-200';
+
+          const item = document.createElement('div');
+          item.className = `p-3.5 rounded-xl border text-xs space-y-1 ${badgeColor}`;
+          item.innerHTML = `
+            <div class="font-bold flex items-center justify-between">
+              <span>${d.title || 'ข้อตรวจพบ'}</span>
+              <span class="uppercase text-[10px] px-2 py-0.5 rounded-full font-bold bg-white/60">${d.severity || 'warning'}</span>
+            </div>
+            <p class="text-slate-700">${d.detail || ''}</p>
+            <p class="text-[11px] font-semibold opacity-90">👉 ${d.impact || ''}</p>
+          `;
+          findingsList.appendChild(item);
+        });
+      }
+
+      const compBody = document.getElementById('comparisonTableBody');
+      compBody.innerHTML = '';
+      const compLabels = {
+        vendor_name: { label: 'บริษัทคู่ค้า', docType: 'invoice' },
+        tax_id: { label: 'เลขประจำตัวผู้เสียภาษี (Tax ID)', docType: 'invoice' },
+        bank_account: { label: 'ธนาคารและเลขที่บัญชี', docType: 'invoice' },
+        amount: { label: 'วงเงินตามใบสั่งซื้อ / เรียกเก็บ', docType: 'invoice' },
+        credit_terms: { label: 'เครดิตเทอมการชำระเงิน', docType: 'invoice' },
+        delivery_sla: { label: 'สถานะการส่งมอบงาน / SLA', docType: 'contract' }
+      };
+
+      const comp = audit.comparison || {};
+      for (const [key, cfg] of Object.entries(compLabels)) {
+        const item = comp[key] || { po: '-', doc: '-', match: true };
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition';
+        const matchBadge = item.match 
+          ? `<span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold text-[11px]">✓ ตรงกัน</span>`
+          : `<span class="bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-bold text-[11px]">✕ ไม่ตรงกัน</span>`;
+
+        const isClickable = item.doc && item.doc !== '-' && item.doc !== 'ไม่ระบุ';
+        const docDisplay = isClickable
+          ? `<button type="button" onclick="openDocumentModal('${cfg.docType}', '${encodeURIComponent(item.doc)}', '${cfg.label}')" class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-900 border border-blue-200/80 hover:border-blue-300 font-semibold transition group cursor-pointer text-left" title="คลิกเพื่อดูภาพเอกสารจริงและไฮไลท์ตำแหน่งที่สกัดมา">
+              <span class="mono">${item.doc}</span>
+              <span class="text-[10px] bg-blue-200/70 text-blue-800 px-1.5 py-0.5 rounded font-semibold group-hover:bg-blue-300 transition">🔍 ดูเอกสาร</span>
+            </button>`
+          : `<span class="mono text-slate-700">${item.doc}</span>`;
+
+        tr.innerHTML = `
+          <td class="py-3 px-4 font-medium text-slate-900">${cfg.label}</td>
+          <td class="py-3 px-4 mono text-slate-700">${item.po || '-'}</td>
+          <td class="py-3 px-4">${docDisplay}</td>
+          <td class="py-3 px-4 text-center">${matchBadge}</td>
+        `;
+        compBody.appendChild(tr);
+      }
+
+      const fin = audit.financial_summary || {};
+      const totalDeductions = Number((fin.extra_unapproved_amount || 0) + (fin.partial_short_amount || 0) + (fin.retention_deduct_amount || 0) + (fin.delay_penalty_amount || 0));
+
+      document.getElementById('finPoBase').textContent = Number(fin.po_approved_amount || 0).toLocaleString() + ' ฿';
+      document.getElementById('finBilledSubtotal').textContent = Number(fin.invoice_billed_subtotal || 0).toLocaleString() + ' ฿';
+      document.getElementById('finExtraDeduct').textContent = totalDeductions > 0 ? `-${totalDeductions.toLocaleString()} ฿` : '0.00 ฿';
+      document.getElementById('finNetSubtotal').textContent = Number(fin.net_payable_subtotal || 0).toLocaleString() + ' ฿';
+      document.getElementById('finVat').textContent = Number(fin.vat_7_pct || 0).toLocaleString() + ' ฿';
+      document.getElementById('finTotalDue').textContent = Number(fin.total_due_payable || 0).toLocaleString() + ' ฿';
+
+      currentEmailSummaryText = audit.email_summary || '';
+      resultsSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function copySummary() {
+      if (!currentEmailSummaryText) return;
+      navigator.clipboard.writeText(currentEmailSummaryText).then(() => {
+        showToast('คัดลอกผลสรุปการตรวจเช็คเข้า Clipboard เรียบร้อยแล้ว');
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 3000);
+    }
+
+    // --- Document Viewer Modal Functions ---
+    let currentModalDocType = 'invoice';
+    let currentModalQuery = '';
+    let currentModalPage = 0;
+    let currentModalZoom = 1.0;
+
+    function openDocumentModal(docType, query, label) {
+      currentModalDocType = docType || 'invoice';
+      currentModalQuery = query ? decodeURIComponent(query) : '';
+      currentModalPage = 0;
+      currentModalZoom = 1.0;
+
+      // ถ้ายังไม่มี preset ที่เลือก ให้ลองดูจากช่อง poSelect
+      if (!currentSelectedPreset && !currentAuditSessionId) {
+        const poVal = document.getElementById('poSelect').value;
+        for (const [k, v] of Object.entries(presetMap)) {
+          if (v.po === poVal) {
+            currentSelectedPreset = k;
+            break;
+          }
+        }
+      }
+
+      const modal = document.getElementById('docModal');
+      modal.classList.remove('hidden');
+
+      document.getElementById('modalSearchInput').value = currentModalQuery;
+      updateModalTabs();
+      loadModalDocument();
+    }
+
+    function closeDocumentModal() {
+      const modal = document.getElementById('docModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function switchDocType(type) {
+      if (currentModalDocType === type) return;
+      currentModalDocType = type;
+      currentModalPage = 0;
+      updateModalTabs();
+      loadModalDocument();
+    }
+
+    function updateModalTabs() {
+      const tabInv = document.getElementById('tabInvoice');
+      const tabCon = document.getElementById('tabContract');
+      if (!tabInv || !tabCon) return;
+
+      if (currentModalDocType === 'invoice') {
+        tabInv.className = 'px-3 py-1.5 rounded-lg font-bold transition flex items-center space-x-1 bg-white text-blue-700 shadow-sm cursor-pointer';
+        tabCon.className = 'px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:text-slate-900 transition flex items-center space-x-1 cursor-pointer';
+      } else {
+        tabInv.className = 'px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:text-slate-900 transition flex items-center space-x-1 cursor-pointer';
+        tabCon.className = 'px-3 py-1.5 rounded-lg font-bold transition flex items-center space-x-1 bg-white text-blue-700 shadow-sm cursor-pointer';
+      }
+    }
+
+    function applyModalSearch() {
+      currentModalQuery = document.getElementById('modalSearchInput').value.trim();
+      currentModalPage = 0;
+      loadModalDocument();
+    }
+
+    function changeZoom(delta) {
+      currentModalZoom = Math.min(Math.max(0.5, currentModalZoom + delta), 2.2);
+      applyZoom();
+    }
+
+    function resetZoom() {
+      currentModalZoom = 1.0;
+      applyZoom();
+    }
+
+    function applyZoom() {
+      const wrapper = document.getElementById('modalImgWrapper');
+      if (wrapper) {
+        wrapper.style.transform = `scale(${currentModalZoom})`;
+      }
+      const zoomText = document.getElementById('zoomLevelText');
+      if (zoomText) {
+        zoomText.textContent = `${Math.round(currentModalZoom * 100)}%`;
+      }
+    }
+
+    async function loadModalDocument() {
+      const loading = document.getElementById('modalLoading');
+      if (loading) loading.classList.remove('hidden');
+
+      try {
+        const params = new URLSearchParams();
+        params.append('doc_type', currentModalDocType);
+        if (currentModalQuery) params.append('query', currentModalQuery);
+        if (currentSelectedPreset) params.append('preset_key', currentSelectedPreset);
+        if (currentAuditSessionId) params.append('session_id', currentAuditSessionId);
+        params.append('page', currentModalPage);
+
+        const res = await fetch(`./api/document/preview?${params.toString()}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          alert('ไม่สามารถโหลดภาพเอกสารได้: ' + (data.detail || data.error || 'เกิดข้อผิดพลาด'));
+          return;
+        }
+
+        const img = document.getElementById('modalDocImg');
+        img.src = data.image_base64;
+
+        document.getElementById('modalDocFilename').textContent = data.filename || '';
+        document.getElementById('modalPageIndicator').textContent = `หน้า ${data.page_idx + 1} / ${data.total_pages}`;
+
+        const statusIcon = document.getElementById('modalStatusIcon');
+        const statusText = document.getElementById('modalStatusText');
+
+        if (data.found) {
+          statusIcon.textContent = '🎯';
+          statusText.innerHTML = `ตรวจพบและตีกรอบไฮไลท์ข้อความ: <span class="font-bold underline text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded">${data.matched_query}</span> (${data.match_count} จุด)`;
+        } else if (currentModalQuery) {
+          statusIcon.textContent = 'ℹ️';
+          statusText.innerHTML = `ไม่พบคำว่า "${currentModalQuery}" ในหน้านี้ (กำลังแสดงเอกสารเต็ม)`;
+        } else {
+          statusIcon.textContent = '📄';
+          statusText.innerHTML = `แสดงภาพเอกสารต้นฉบับฉบับเต็ม`;
+        }
+
+        applyZoom();
+      } catch (err) {
+        console.error('Error loading document preview:', err);
+        alert('เกิดข้อผิดพลาดในการโหลดตัวอย่างเอกสาร');
+      } finally {
+        if (loading) loading.classList.add('hidden');
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeDocumentModal();
+        closeHistoryModal();
+      }
+    });
+
+    window.onload = init;
+  </script>
+</body>
+</html>
