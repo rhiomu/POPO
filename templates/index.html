@@ -1166,6 +1166,8 @@
         if (currentModalQuery) params.append('query', currentModalQuery);
         if (currentSelectedPreset) params.append('preset_key', currentSelectedPreset);
         if (currentAuditSessionId) params.append('session_id', currentAuditSessionId);
+        const poVal = document.getElementById('poSelect')?.value;
+        if (poVal) params.append('po_number', poVal);
         params.append('page', currentModalPage);
 
         const res = await fetch(`./api/document/preview?${params.toString()}`);
