@@ -1,3 +1,13 @@
+---
+title: Smart PO & Invoice Auditor
+emoji: ⚖️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Smart PO & Invoice Auditor ⚖️
 ### Automated Purchase Order & Invoice Reconciliation Dashboard
 **ระบบตรวจเช็ค PO และบิลคู่ค้าอัตโนมัติด้วย AI สำหรับการเรียนการสอน Vibe Coding**
