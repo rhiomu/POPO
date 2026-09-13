@@ -307,6 +307,57 @@ def render_pdf_page_with_highlight(
                         break
                         
         page = doc[target_page_idx]
+
+        # Fallback อัตโนมัติสำหรับ Cloud Server ที่ไม่มี Tesseract OCR ในระบบ (เช่น Render Native Python)
+        # ให้สลับไปขอพิกัด Bounding Box จาก Vision AI (Qwen2.5-VL)
+        if not matching_rects and not bool(page.get_text().strip()) and (query or alternate_query):
+            try:
+                from src.po_auditor.config import Settings
+                st = Settings()
+                eff_key = st.get_effective_api_key()
+                if eff_key and eff_key.get_secret_value() and st.llm_base_url:
+                    from openai import OpenAI
+                    import json
+                    v_client = OpenAI(base_url=st.llm_base_url, api_key=eff_key.get_secret_value(), timeout=12.0)
+                    pix_test = page.get_pixmap(dpi=100)
+                    b64_page = base64.b64encode(pix_test.tobytes("png")).decode("utf-8")
+                    target_q = candidates[0] if (candidates and len(candidates) > 0) else (query or alternate_query)
+                    v_prompt = (
+                        f'Locate the text or element "{target_q}" in the image. '
+                        'Return JSON: {"boxes": [[ymin, xmin, ymax, xmax]]} normalized between 0 and 1000.'
+                    )
+                    v_model = getattr(st, "llm_vision_model", None) or "Qwen/Qwen2.5-VL-72B-Instruct"
+                    resp = v_client.chat.completions.create(
+                        model=v_model,
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": v_prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_page}"}}
+                            ]
+                        }],
+                        max_tokens=150,
+                        temperature=0.0
+                    )
+                    raw_text = resp.choices[0].message.content or ""
+                    m_box = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                    if m_box:
+                        b_data = json.loads(m_box.group(0))
+                        boxes = b_data.get("boxes") or []
+                        if not boxes and "box_2d" in b_data:
+                            boxes = [b_data["box_2d"]]
+                        for b in boxes:
+                            if len(b) == 4:
+                                ymin, xmin, ymax, xmax = b
+                                rx0 = (xmin / 1000.0) * page.rect.width
+                                ry0 = (ymin / 1000.0) * page.rect.height
+                                rx1 = (xmax / 1000.0) * page.rect.width
+                                ry1 = (ymax / 1000.0) * page.rect.height
+                                matching_rects.append(pymupdf.Rect(rx0, ry0, rx1, ry1))
+                        if matching_rects:
+                            matched_str = target_q
+            except Exception as e:
+                logger.warning(f"Vision Grounding Fallback Error: {e}")
         
         # วาดกล่องไฮไลท์สีเหลืองขอบแดงโปร่งแสง
         if matching_rects:
