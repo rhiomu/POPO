@@ -31,3 +31,7 @@ __pycache__/
 # SQLite Temporary WAL & Lock files
 *.db-wal
 *.db-shm
+
+# Scratch & Temporary test directories
+scratch/
+

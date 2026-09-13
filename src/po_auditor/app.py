@@ -19,6 +19,7 @@ from src.po_auditor.db import (
     get_audit_by_cache_key,
     delete_audit_history
 )
+from src.po_auditor.document_extractor import extract_document_text
 from src.po_auditor.pdf_extractor import extract_text_from_pdf, render_pdf_page_with_highlight
 from src.po_auditor.auditor import audit_po_and_documents, audit_with_llm
 
@@ -37,7 +38,7 @@ templates = Jinja2Templates(directory="templates")
 
 # Session memory storage for uploaded documents
 SESSION_UPLOADS: Dict[str, Dict[str, Any]] = {}
-LATEST_SESSION: Dict[str, Any] = {"preset_key": "case6", "session_id": None}
+LATEST_SESSION: Dict[str, Any] = {"preset_key": "case1", "session_id": None}
 
 # Preset map for all 8 test cases
 PRESET_MAP = {
@@ -141,11 +142,11 @@ async def api_run_audit(
         if os.path.exists(preset["invoice_pdf"]):
             with open(preset["invoice_pdf"], "rb") as f:
                 raw_inv_bytes = f.read()
-            invoice_text = extract_text_from_pdf(raw_inv_bytes)
+            invoice_text = extract_document_text(raw_inv_bytes, filename=preset["invoice_pdf"], settings=settings)
         if os.path.exists(preset["contract_pdf"]):
             with open(preset["contract_pdf"], "rb") as f:
                 raw_con_bytes = f.read()
-            contract_text = extract_text_from_pdf(raw_con_bytes)
+            contract_text = extract_document_text(raw_con_bytes, filename=preset["contract_pdf"], settings=settings)
         LATEST_SESSION["preset_key"] = preset_key
         LATEST_SESSION["session_id"] = None
     else:
@@ -156,12 +157,12 @@ async def api_run_audit(
         if invoice_file and invoice_file.filename:
             inv_bytes = await invoice_file.read()
             inv_name = invoice_file.filename
-            invoice_text = extract_text_from_pdf(inv_bytes)
+            invoice_text = extract_document_text(inv_bytes, filename=inv_name, settings=settings)
             raw_inv_bytes = inv_bytes
         if contract_file and contract_file.filename:
             con_bytes = await contract_file.read()
             con_name = contract_file.filename
-            contract_text = extract_text_from_pdf(con_bytes)
+            contract_text = extract_document_text(con_bytes, filename=con_name, settings=settings)
             raw_con_bytes = con_bytes
 
         session_id = uuid.uuid4().hex[:8]
@@ -175,7 +176,7 @@ async def api_run_audit(
         LATEST_SESSION["session_id"] = session_id
 
     if not invoice_text:
-        raise HTTPException(status_code=400, detail="ไม่พบข้อมูลในไฟล์ใบแจ้งหนี้ (Invoice PDF)")
+        raise HTTPException(status_code=400, detail="ไม่พบข้อมูลในไฟล์ใบแจ้งหนี้ (รองรับ PDF, Word, Excel, CSV และรูปภาพ JPG/PNG)")
 
     eff_key = settings.get_effective_api_key()
     audit_engine = "Built-in Local Audit Engine"
@@ -260,23 +261,25 @@ async def api_preview_document(
     query: Optional[str] = None,
     preset_key: Optional[str] = None,
     session_id: Optional[str] = None,
+    po_number: Optional[str] = None,
     page: int = 0
 ):
-    """เรนเดอร์ภาพหน้าเอกสาร PDF พร้อมไฮไลท์ข้อความที่สกัดมา"""
-    active_preset = preset_key or (LATEST_SESSION.get("preset_key") if not session_id else None)
-    active_session = session_id or LATEST_SESSION.get("session_id")
+    """เรนเดอร์ภาพหน้าเอกสาร PDF/DOCX/XLSX/Image พร้อมไฮไลท์ข้อความที่สกัดมา"""
+    active_preset = preset_key
     
+    # 1. หากไม่มี preset_key ให้ค้นหาจาก po_number ที่ส่งมาจากหน้าบ้านหรือประวัติ
+    if not active_preset and po_number:
+        for p_key, p_val in PRESET_MAP.items():
+            if p_val.get("po_number") == po_number:
+                active_preset = p_key
+                break
+
     pdf_source = None
     filename = ""
 
-    if active_preset and active_preset in PRESET_MAP:
-        preset = PRESET_MAP[active_preset]
-        pdf_path = preset["invoice_pdf"] if doc_type == "invoice" else preset["contract_pdf"]
-        if os.path.exists(pdf_path):
-            pdf_source = pdf_path
-            filename = os.path.basename(pdf_path)
-    elif active_session and active_session in SESSION_UPLOADS:
-        sess = SESSION_UPLOADS[active_session]
+    # 2. หากระบุ session_id ชัดเจน (เป็นการอัปโหลดไฟล์ใน session นั้น)
+    if session_id and session_id in SESSION_UPLOADS:
+        sess = SESSION_UPLOADS[session_id]
         if doc_type == "invoice" and sess.get("invoice_bytes"):
             pdf_source = sess["invoice_bytes"]
             filename = sess.get("invoice_name", "invoice.pdf")
@@ -284,22 +287,77 @@ async def api_preview_document(
             pdf_source = sess["contract_bytes"]
             filename = sess.get("contract_name", "contract.pdf")
 
-    # Fallback to Case 6 if nothing specified
+    # 3. หากมี Preset ที่ตรงกัน (และไม่ได้ระบุ session_id)
+    if not pdf_source and active_preset and active_preset in PRESET_MAP:
+        preset = PRESET_MAP[active_preset]
+        pdf_path = preset["invoice_pdf"] if doc_type == "invoice" else preset["contract_pdf"]
+        if os.path.exists(pdf_path):
+            pdf_source = pdf_path
+            filename = os.path.basename(pdf_path)
+
+    # 4. หากยังไม่มี ให้ลองดูจาก LATEST_SESSION
     if not pdf_source:
-        fallback_preset = PRESET_MAP["case6"]
+        last_sess_id = LATEST_SESSION.get("session_id")
+        if last_sess_id and last_sess_id in SESSION_UPLOADS:
+            sess = SESSION_UPLOADS[last_sess_id]
+            if doc_type == "invoice" and sess.get("invoice_bytes"):
+                pdf_source = sess["invoice_bytes"]
+                filename = sess.get("invoice_name", "invoice.pdf")
+            elif doc_type == "contract" and sess.get("contract_bytes"):
+                pdf_source = sess["contract_bytes"]
+                filename = sess.get("contract_name", "contract.pdf")
+                
+    if not pdf_source:
+        last_preset = LATEST_SESSION.get("preset_key")
+        if last_preset and last_preset in PRESET_MAP:
+            preset = PRESET_MAP[last_preset]
+            pdf_path = preset["invoice_pdf"] if doc_type == "invoice" else preset["contract_pdf"]
+            if os.path.exists(pdf_path):
+                pdf_source = pdf_path
+                filename = os.path.basename(pdf_path)
+
+    # 5. Fallback to Case 1 if nothing specified
+    if not pdf_source:
+        fallback_preset = PRESET_MAP["case1"]
         fallback_path = fallback_preset["invoice_pdf"] if doc_type == "invoice" else fallback_preset["contract_pdf"]
         if os.path.exists(fallback_path):
             pdf_source = fallback_path
             filename = os.path.basename(fallback_path)
 
     if not pdf_source:
-        raise HTTPException(status_code=404, detail="ไม่พบไฟล์เอกสาร PDF สำหรับแสดงตัวอย่าง")
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์เอกสารสำหรับแสดงตัวอย่าง")
+
+    # ค้นหาคำค้นหาทางเลือก (เช่น สลับชื่อไทย-อังกฤษของคู่ค้า)
+    alternate_query = None
+    if po_number and query:
+        try:
+            from src.po_auditor.db import get_db_connection
+            conn = get_db_connection(settings.db_path)
+            row = conn.execute(
+                "SELECT audit_result FROM audit_cache WHERE po_number = ? ORDER BY last_accessed_at DESC LIMIT 1",
+                (po_number,)
+            ).fetchone()
+            if row:
+                audit_obj = json.loads(row["audit_result"])
+                comp_v = (audit_obj.get("comparison") or {}).get("vendor_name", {})
+                v_po = (comp_v.get("po") or "").strip()
+                v_doc = (comp_v.get("doc") or "").strip()
+                q_clean = query.strip().lower()
+                if q_clean == v_po.lower() or (len(q_clean) >= 5 and q_clean in v_po.lower()):
+                    alternate_query = v_doc
+                elif q_clean == v_doc.lower() or (len(q_clean) >= 5 and q_clean in v_doc.lower()):
+                    alternate_query = v_po
+            conn.close()
+        except Exception:
+            pass
 
     res = render_pdf_page_with_highlight(
         pdf_source=pdf_source,
         query=query,
         page_idx=page,
-        doc_type=doc_type
+        doc_type=doc_type,
+        filename=filename,
+        alternate_query=alternate_query
     )
     res["filename"] = filename
     res["doc_type"] = doc_type

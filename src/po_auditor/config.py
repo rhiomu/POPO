@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     llm_api_key: Optional[SecretStr] = Field(default=None, validation_alias="LLM_API_KEY", description="API Key for OpenAI-compatible LLM")
     llm_base_url: Optional[str] = Field(default=None, validation_alias="LLM_BASE_URL", description="Base URL for OpenAI-compatible API (e.g. https://api.openai.com/v1)")
     llm_model: str = Field(default="gpt-4o-mini", validation_alias="LLM_MODEL", description="LLM Model Name (e.g. gpt-4o-mini, gpt-4o, deepseek-chat)")
+    llm_vision_model: str = Field(default="Qwen/Qwen2.5-VL-72B-Instruct", validation_alias="LLM_VISION_MODEL", description="Vision model for OCR on image documents")
     llm_temperature: float = Field(default=0.0, validation_alias="LLM_TEMPERATURE", description="Sampling temperature")
 
     # Fallback to API_KEY if LLM_API_KEY is not set
@@ -50,6 +51,7 @@ class Settings(BaseSettings):
         print(f"Active Engine     : {engine_mode}")
         print(f"LLM Base URL      : {base_url_disp}")
         print(f"LLM Model         : {self.llm_model}")
+        print(f"Vision OCR Model  : {self.llm_vision_model}")
         print(f"LLM API Key       : {masked_key}")
         print("=" * 50)
 

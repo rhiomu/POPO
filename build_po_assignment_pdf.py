@@ -10,7 +10,7 @@ font_path = "/System/Library/Fonts/Supplemental/Sathu.ttf"
 pdfmetrics.registerFont(TTFont("Sathu", font_path))
 
 def build_pdf():
-    pdf_filename = "po_vibe_coding_assignment.pdf"
+    pdf_filename = "03_smart_po_invoice_auditor.pdf"
     doc = SimpleDocTemplate(
         pdf_filename,
         pagesize=letter,

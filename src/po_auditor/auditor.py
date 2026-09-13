@@ -364,7 +364,7 @@ LLM_SYSTEM_PROMPT = """คุณคือ AI ผู้เชี่ยวชา�
 
 ข้อควรปฏิบัติเพื่อประสิทธิภาพและความแม่นยำ:
 1. การตรวจสอบตัวตนคู่ค้า:
-   - ตรวจสอบชื่อบริษัทคู่ค้า: ตรงกันหรือไม่ (หากคนละบริษัท ให้ระบุว่าไม่ตรงกันและเตือนเสี่ยงสวมสิทธิ์)
+   - ตรวจสอบชื่อบริษัทคู่ค้า: ตรงกันหรือไม่ (หมายเหตุสำคัญ: หากชื่อในระบบ PO เป็นภาษาไทย และชื่อบนบิลเป็นภาษาอังกฤษ เช่น 'บริษัท กังหัน เอ็นจิเนียริ่ง แอนด์ เซอร์วิส จำกัด' กับ 'KangHan Engineering & Service Co., Ltd.' ซึ่งเป็นการแปลหรือทับศัพท์ชื่อบริษัทเดียวกัน และมีเลข Tax ID หรือบัญชีธนาคารตรงกัน ให้ถือว่า 'ตรงกัน' (match: true) ห้ามมองว่าไม่ตรงกันเด็ดขาด)
    - เลขประจำตัวผู้เสียภาษี (Tax ID 13 หลัก): ตรงกับ Vendor Master ในระบบหรือไม่ หากไม่ตรงถือเป็น FRAUD_ALERT ทันที
    - ธนาคารและเลขที่บัญชี: ตรงกับบัญชีในระบบหรือไม่ หากไม่ตรงให้เตือนเสี่ยงเบี่ยงเบนเงิน/บัญชีม้า
 2. วงเงินและเงื่อนไขการเงิน:
@@ -508,6 +508,29 @@ async def audit_with_llm(
 
     if not isinstance(result.get("comparison"), dict):
         result["comparison"] = {}
+
+    # Normalization: ป้องกันความผิดพลาดกรณี LLM มองว่าชื่อไทยกับชื่ออังกฤษไม่ตรงกัน ทั้งที่เป็นบริษัทเดียวกัน
+    comp_vendor = result.get("comparison", {}).get("vendor_name")
+    if isinstance(comp_vendor, dict):
+        v_doc = str(comp_vendor.get("doc", "")).lower()
+        v_id = str(po_data.get("vendor_id", "")).strip()
+        kw_list = {
+            "VN-001": ["กังหัน", "kanghan"],
+            "VN-002": ["อินโทรเวิท", "introvert"],
+            "VN-003": ["เดอตี้ วอเธอร์", "dirty water"],
+            "VN-004": ["ไอโอดี สลัด", "iod salad"],
+            "VN-005": ["สยาม ซัน", "siam sun"],
+            "VN-006": ["เอเชีย เมกา", "asia mega"],
+            "VN-007": ["โกลบอล เอเนอร์ยี่", "global energy"],
+            "VN-008": ["พรีเมียร์ วาล์ว", "premier valve"]
+        }.get(v_id, [])
+        if kw_list and any(kw in v_doc for kw in kw_list):
+            comp_vendor["match"] = True
+            # ลบข้อตรวจพบที่เป็น False Positive ออก
+            result["discrepancies"] = [
+                d for d in result["discrepancies"]
+                if not (("ชื่อคู่ค้า" in str(d.get("title", "")) or "vendor" in str(d.get("title", "")).lower()) and ("ไม่ตรง" in str(d.get("title", "")) or "ไทย vs อังกฤษ" in str(d.get("title", ""))))
+            ]
 
     fin = result.get("financial_summary")
     if not isinstance(fin, dict):

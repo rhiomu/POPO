@@ -101,20 +101,26 @@
 
         <!-- Step 2: Invoice Upload -->
         <div class="space-y-2">
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-            2. แนบไฟล์ใบแจ้งหนี้ (Invoice PDF)
-          </label>
-          <input type="file" id="invoiceFile" onchange="clearPreset()" accept=".pdf" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl bg-slate-50 cursor-pointer">
-          <p id="invoiceStatusHint" class="text-[11px] text-slate-400">รองรับไฟล์ .pdf จากคู่ค้า</p>
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              2. แนบใบแจ้งหนี้ / ใบเสร็จ (Invoice)
+            </label>
+            <span id="invoiceTypeBadge" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-md"></span>
+          </div>
+          <input type="file" id="invoiceFile" onchange="onFileChange('invoice')" accept=".pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.webp" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-xl bg-slate-50 cursor-pointer">
+          <p id="invoiceStatusHint" class="text-[11px] text-slate-400">รองรับ PDF, Word (DOCX), Excel (XLSX, CSV), รูปภาพ JPG/PNG</p>
         </div>
 
         <!-- Step 3: Contract Upload -->
         <div class="space-y-2">
-          <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-            3. แนบสัญญา/ใบตรวจรับ (Contract/GR PDF)
-          </label>
-          <input type="file" id="contractFile" onchange="clearPreset()" accept=".pdf" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-slate-200 rounded-xl bg-slate-50 cursor-pointer">
-          <p id="contractStatusHint" class="text-[11px] text-slate-400">เอกสารเงื่อนไขค่าปรับหรืองวดงาน</p>
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+              3. แนบสัญญา / ใบตรวจรับ / BOQ (Contract/GR)
+            </label>
+            <span id="contractTypeBadge" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-md"></span>
+          </div>
+          <input type="file" id="contractFile" onchange="onFileChange('contract')" accept=".pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.webp" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-slate-200 rounded-xl bg-slate-50 cursor-pointer">
+          <p id="contractStatusHint" class="text-[11px] text-slate-400">รองรับ PDF, Word (DOCX), Excel (XLSX, CSV), รูปภาพ JPG/PNG</p>
         </div>
       </div>
 
@@ -665,11 +671,19 @@
           return;
         }
 
-        // 1. ตั้งค่าเลขที่ PO ใน dropdown
+        // 1. ตั้งค่าเลขที่ PO ใน dropdown และจับคู่ preset_key สำหรับเปิดดูเอกสาร
         const poSelect = document.getElementById('poSelect');
         if (poSelect) {
           poSelect.value = data.po_number;
         }
+        currentSelectedPreset = null;
+        for (const [k, v] of Object.entries(presetMap)) {
+          if (v.po === data.po_number) {
+            currentSelectedPreset = k;
+            break;
+          }
+        }
+        currentAuditSessionId = null;
 
         // 2. เรนเดอร์ข้อมูล PO Master
         if (data.po_data) {
@@ -785,6 +799,47 @@
       }
     }
 
+    function onFileChange(type) {
+      clearPreset();
+      const input = document.getElementById(type === 'invoice' ? 'invoiceFile' : 'contractFile');
+      const badge = document.getElementById(type === 'invoice' ? 'invoiceTypeBadge' : 'contractTypeBadge');
+      const hint = document.getElementById(type === 'invoice' ? 'invoiceStatusHint' : 'contractStatusHint');
+      
+      if (!input || !input.files || input.files.length === 0) {
+        if (badge) badge.classList.add('hidden');
+        if (hint) hint.textContent = 'รองรับ PDF, Word (DOCX), Excel (XLSX, CSV), รูปภาพ JPG/PNG';
+        return;
+      }
+      
+      const file = input.files[0];
+      const name = file.name.toLowerCase();
+      let badgeText = '📄 PDF';
+      let badgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
+      
+      if (name.endsWith('.docx') || name.endsWith('.doc')) {
+        badgeText = '📝 Word (DOCX)';
+        badgeColor = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      } else if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        badgeText = '📊 Excel (XLSX)';
+        badgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      } else if (name.endsWith('.csv')) {
+        badgeText = '📑 CSV Spreadsheet';
+        badgeColor = 'bg-teal-100 text-teal-800 border-teal-200';
+      } else if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp')) {
+        badgeText = '🖼️ รูปภาพ (Image OCR)';
+        badgeColor = 'bg-purple-100 text-purple-800 border-purple-200';
+      }
+      
+      if (badge) {
+        badge.textContent = badgeText;
+        badge.className = `text-[10px] font-bold px-2 py-0.5 rounded-md border ${badgeColor}`;
+        badge.classList.remove('hidden');
+      }
+      if (hint) {
+        hint.textContent = `📎 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      }
+    }
+
     function clearPreset() {
       currentSelectedPreset = null;
       document.getElementById('activePresetBadge').classList.add('hidden');
@@ -796,11 +851,19 @@
       const poSelect = document.getElementById('poSelect');
       if (poSelect) poSelect.value = '';
 
-      // 2. ล้างไฟล์แนบทั้ง 2 ช่อง
+      // 2. ล้างไฟล์แนบทั้ง 2 ช่อง และ Badge
       const invInput = document.getElementById('invoiceFile');
       if (invInput) invInput.value = '';
       const conInput = document.getElementById('contractFile');
       if (conInput) conInput.value = '';
+      const invBadge = document.getElementById('invoiceTypeBadge');
+      if (invBadge) invBadge.classList.add('hidden');
+      const conBadge = document.getElementById('contractTypeBadge');
+      if (conBadge) conBadge.classList.add('hidden');
+      const invHint = document.getElementById('invoiceStatusHint');
+      if (invHint) invHint.textContent = 'รองรับ PDF, Word (DOCX), Excel (XLSX, CSV), รูปภาพ JPG/PNG';
+      const conHint = document.getElementById('contractStatusHint');
+      if (conHint) conHint.textContent = 'รองรับ PDF, Word (DOCX), Excel (XLSX, CSV), รูปภาพ JPG/PNG';
 
       // 3. ยกเลิกพรีเซ็ตจำลอง
       clearPreset();
@@ -1189,7 +1252,10 @@
 
         if (data.found) {
           statusIcon.textContent = '🎯';
-          statusText.innerHTML = `ตรวจพบและตีกรอบไฮไลท์ข้อความ: <span class="font-bold underline text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded">${data.matched_query}</span> (${data.match_count} จุด)`;
+          statusText.innerHTML = `ตรวจพบและตีกรอบไฮไลท์ข้อความ: <span class="font-bold underline text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded">${data.matched_query}</span> (${data.match_count} จุด)` + (data.is_scanned_image ? ' <span class="ml-1.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">🖼️ ไฮไลท์บนรูปภาพ</span>' : '');
+        } else if (data.is_scanned_image) {
+          statusIcon.textContent = '🖼️';
+          statusText.innerHTML = `เอกสารฉบับนี้เป็นไฟล์รูปภาพ/สแกน (AI สกัดข้อมูลผ่าน Vision AI เรียบร้อยแล้ว กำลังแสดงภาพต้นฉบับ)`;
         } else if (currentModalQuery) {
           statusIcon.textContent = 'ℹ️';
           statusText.innerHTML = `ไม่พบคำว่า "${currentModalQuery}" ในหน้านี้ (กำลังแสดงเอกสารเต็ม)`;
