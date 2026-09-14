@@ -28,10 +28,40 @@ __pycache__/
 *.swp
 *.swo
 
-# SQLite Temporary WAL & Lock files
+# SQLite Temporary WAL & Lock files (เก็บ enterprise.db ไว้สำหรับ Render)
 *.db-wal
 *.db-shm
 
 # Scratch & Temporary test directories
 scratch/
+
+# Root-level extra assignment & workshop documents
+/*.[Pp][Dd][Ff]
+/*.[Dd][Oo][Cc][Xx]
+/*po_vibe_coding_assignment*
+/*smart_po_invoice_auditor*
+/*solar_vibe_coding*
+prompt_template_cheat_sheet.txt
+AGENTS (*
+AGENTS-*.md
+คู่มือ_*.md
+
+# Unused / standalone scripts
+build_po_assignment_*.py
+doc.py
+main.py
+multi.py
+reset_data.py
+sqlite.py
+
+# Unused assets & web worker files
+assets/
+package.json
+package-lock.json
+worker.js
+wrangler.toml
+
+# Always preserve sample_documents
+!sample_documents/
+!sample_documents/**
 

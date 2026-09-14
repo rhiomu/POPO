@@ -8,6 +8,63 @@ def get_db_connection(db_path: str = "enterprise.db") -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+DEFAULT_VENDORS = [
+    ("VN-001", "0105556098711", "บริษัท กังหัน เอ็นจิเนียริ่ง แอนด์ เซอร์วิส จำกัด", "ธนาคารกสิกรไทย", "045-2-12345-6"),
+    ("VN-002", "0105549012345", "บริษัท อินโทรเวิท เทค ซัพพลาย จำกัด", "ธนาคารไทยพาณิชย์", "112-3-98765-4"),
+    ("VN-003", "0105562045678", "บริษัท เดอตี้ วอเธอร์ โซลูชั่นส์ จำกัด", "ธนาคารกรุงเทพ", "201-0-55443-3"),
+    ("VN-004", "0105531089922", "บริษัท ไอโอดี สลัด เพาเวอร์ จำกัด", "ธนาคารกรุงไทย", "003-1-77889-0"),
+    ("VN-005", "0105558012399", "บริษัท สยาม ซัน พาวเวอร์ อีควิปเมนท์ จำกัด", "ธนาคารกสิกรไทย", "029-1-88776-5"),
+    ("VN-006", "0105547089112", "บริษัท เอเชีย เมกา คอนสตรัคชั่น จำกัด", "ธนาคารไทยพาณิชย์", "049-2-33445-5"),
+    ("VN-007", "0105551022445", "บริษัท โกลบอล เอเนอร์ยี่ ซิสเต็มส์ จำกัด", "ธนาคารกรุงเทพ", "142-0-99881-2"),
+    ("VN-008", "0105539077123", "บริษัท พรีเมียร์ วาล์ว แอนด์ ไปป์ จำกัด", "ธนาคารกรุงไทย", "015-1-66554-3")
+]
+
+DEFAULT_POS = [
+    ("PO-2026-089", "VN-001", "G.Brimm Power", "งานซ่อมบำรุงกังหันก๊าซ", 1000000.00, 30, "2026-12-31"),
+    ("PO-2026-090", "VN-002", "G.Brimm Solar", "จัดซื้ออินเวอร์เตอร์โซลาร์ 20 ชุด", 450000.00, 45, "2026-12-31"),
+    ("PO-2026-091", "VN-003", "G.Brimm Biomass", "ติดตั้งระบบบำบัดน้ำเสีย", 800000.00, 30, "2026-12-31"),
+    ("PO-2026-092", "VN-004", "Headquarter (Bangkok)", "โครงการพัฒนาระบบประหยัดพลังงาน", 2000000.00, 30, "2026-12-31"),
+    ("PO-2026-093", "VN-005", "Amata City Solar", "จัดซื้อ Switchgear และ Inverter 10 ชุด", 1200000.00, 30, "2026-12-31"),
+    ("PO-2026-094", "VN-006", "Laem Chabang Floating Solar", "ติดตั้งโครงสร้างโซลาร์ลอยน้ำ (งวดสุดท้าย)", 3000000.00, 30, "2026-12-31"),
+    ("PO-2026-095", "VN-007", "Substation Rayong", "ซ่อมบำรุงหม้อแปลงไฟฟ้าแรงสูง", 650000.00, 30, "2026-06-30"),
+    ("PO-2026-096", "VN-008", "Gas Plant Map Ta Phut", "จัดซื้อวาล์วและท่อก๊าซทนแรงดันสูง 3 รายการ", 500000.00, 30, "2026-12-31")
+]
+
+def init_db_tables(db_path: str = "enterprise.db") -> None:
+    """สร้างตาราง vendor_master, purchase_orders และ audit_cache พร้อมข้อมูลตั้งต้นอัตโนมัติหากยังไม่มี"""
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vendor_master (
+            vendor_id TEXT PRIMARY KEY,
+            tax_id TEXT NOT NULL,
+            vendor_name TEXT NOT NULL,
+            bank_name TEXT NOT NULL,
+            bank_account TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS purchase_orders (
+            po_number TEXT PRIMARY KEY,
+            vendor_id TEXT NOT NULL,
+            project_site TEXT NOT NULL,
+            scope_of_work TEXT NOT NULL,
+            approved_amount REAL NOT NULL,
+            standard_credit_days INTEGER NOT NULL,
+            valid_until TEXT NOT NULL DEFAULT '2026-12-31',
+            FOREIGN KEY (vendor_id) REFERENCES vendor_master(vendor_id)
+        )
+    """)
+    cursor.execute("SELECT COUNT(*) FROM vendor_master")
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany("INSERT OR IGNORE INTO vendor_master VALUES (?, ?, ?, ?, ?)", DEFAULT_VENDORS)
+    cursor.execute("SELECT COUNT(*) FROM purchase_orders")
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany("INSERT OR IGNORE INTO purchase_orders VALUES (?, ?, ?, ?, ?, ?, ?)", DEFAULT_POS)
+    conn.commit()
+    conn.close()
+    init_cache_table(db_path)
+
 def init_cache_table(db_path: str = "enterprise.db") -> None:
     """สร้างตาราง audit_cache สำหรับเก็บผลการตรวจสอบเอกสารด้วย Content Hash (SHA-256)"""
     conn = get_db_connection(db_path)
@@ -118,6 +175,7 @@ def save_cached_audit(
     conn.close()
 
 def get_all_pos(db_path: str = "enterprise.db") -> List[Dict[str, Any]]:
+    init_db_tables(db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     query = """
@@ -142,6 +200,7 @@ def get_all_pos(db_path: str = "enterprise.db") -> List[Dict[str, Any]]:
     return [dict(row) for row in rows]
 
 def get_po_detail(po_number: str, db_path: str = "enterprise.db") -> Optional[Dict[str, Any]]:
+    init_db_tables(db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     query = """
